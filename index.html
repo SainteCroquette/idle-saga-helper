@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Idle Saga — Event Timeline</title>
+<style>
+  :root {
+    --bg: #0e0b14;
+    --panel: #1a1422;
+    --panel-2: #221a2e;
+    --border: #3a2d4a;
+    --text: #e8e2f0;
+    --muted: #9a8fae;
+    --gold: #e9c46a;
+    --green: #6ee7a8;
+    --red: #ff6b6b;
+    --accent: #b794f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 50% -10%, #1d1430 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 16px 60px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 22px; }
+  h1 {
+    font-size: 26px; margin: 0 0 4px;
+    color: var(--gold);
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 12px rgba(233,196,106,0.25);
+  }
+  .clocks {
+    display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .clock {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 20px; min-width: 160px;
+  }
+  .clock .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .clock .time { font-size: 20px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .clock .sub { font-size: 11px; color: var(--muted); }
+  .clock.reset .time { color: #5ad1ff; }
+
+  .next-hero {
+    background: linear-gradient(135deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px 24px; margin: 24px 0;
+    display: flex; align-items: center; gap: 18px;
+  }
+  .next-hero .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+  .next-hero .info { flex: 1; }
+  .next-hero .kicker { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .next-hero .name { font-size: 20px; font-weight: 700; }
+  .next-hero .when { font-size: 13px; color: var(--muted); }
+  .next-hero .cd {
+    font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--gold); text-align: right;
+  }
+  .next-hero.active .cd { color: var(--green); }
+  .next-hero .cd .cdlabel { display:block; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing:1px; font-weight:600;}
+
+  /* View tabs */
+  .tabs { display: flex; gap: 6px; justify-content: center; margin: 22px 0 6px; flex-wrap: wrap; }
+  .tab {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    padding: 8px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.on { background: var(--panel-2); color: var(--gold); border-color: var(--gold); }
+
+  /* Swimlane timeline view */
+  .swim { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px 18px; }
+  .swimhead { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 12px; }
+  .swimhead button {
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 6px 13px; cursor: pointer; font-weight: 700; font-family: inherit; font-size: 15px;
+  }
+  .swimhead button:hover { border-color: var(--gold); }
+  .swimhead .lbl { min-width: 190px; text-align: center; font-weight: 700; font-size: 15px; }
+  .swimhead .lbl small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .swimaxis { display: grid; grid-template-columns: 150px 1fr; }
+  .swimaxis .ticks { position: relative; height: 16px; }
+  .swimaxis .ticks span { position: absolute; font-size: 9px; color: var(--muted); transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+  .swimgrid { position: relative; }
+  .swimrow { display: grid; grid-template-columns: 150px 1fr; align-items: center; height: 40px; border-top: 1px solid var(--border); }
+  .swimrow:last-child { border-bottom: 1px solid var(--border); }
+  .swimname { font-size: 13px; font-weight: 600; padding-right: 10px; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; }
+  .swimname .sw { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+  .swimtrack { position: relative; height: 100%; border-left: 1px solid var(--border); }
+  .swimvlines { position: absolute; left: 150px; right: 0; top: 0; bottom: 0; pointer-events: none; }
+  .swimvlines i { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); opacity: 0.35; }
+  .swimblk { position: absolute; top: 9px; bottom: 9px; border-radius: 5px; min-width: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .swimblk.active { box-shadow: 0 0 0 2px var(--green); }
+  .swimblk.past { opacity: 0.4; }
+  .swimblk span { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 6px; font-size: 10px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .swimnow { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5a5a; z-index: 3; pointer-events: none; }
+  .swimnow::before { content: ""; position: absolute; top: -4px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: #ff5a5a; }
+
+  /* Matrix table view */
+  .tblwrap { max-height: 64vh; overflow: auto; border: 1px solid var(--border); border-radius: 14px; }
+  .tbl { width: 100%; border-collapse: collapse; }
+  .tbl th, .tbl td { padding: 10px 10px; border-bottom: 1px solid var(--border); font-size: 12.5px; text-align: center; }
+  .tbl thead th { position: sticky; top: 0; background: var(--panel-2); z-index: 2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .tbl thead th.today, .tbl td.today { background: rgba(233,196,106,0.08); }
+  .tbl thead th.today { color: var(--gold); }
+  .tbl tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  .tbl td.evname { text-align: left; font-weight: 600; white-space: nowrap; }
+  .tbl td.evname .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; }
+  .tbl .t { display: block; font-variant-numeric: tabular-nums; line-height: 1.5; }
+  .tbl .t.next { color: var(--gold); font-weight: 700; }
+  .tbl .t.live { color: var(--green); font-weight: 700; }
+  .tbl .t.past { opacity: 0.32; }
+  .tbl td.none { color: var(--muted); opacity: 0.35; }
+
+  /* Up-next list view */
+  .nextlist { display: flex; flex-direction: column; gap: 8px; }
+  .nsub { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin: 6px 2px; }
+  .nrow {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--panel); border: 1px solid var(--border); border-left-width: 4px;
+    border-radius: 10px; padding: 12px 16px;
+  }
+  .nrow.active { border-color: var(--green); background: linear-gradient(90deg, rgba(110,231,168,0.10), var(--panel)); }
+  .nrow .nt { flex: 0 0 84px; }
+  .nrow .nt .l { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .nrow .nt .d { font-size: 11px; color: var(--muted); }
+  .nrow .nn { flex: 1; font-weight: 600; font-size: 15px; }
+  .nrow .ns { font-size: 11px; color: var(--muted); }
+  .nrow .nc { flex: 0 0 96px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .nrow.active .nc { color: var(--green); }
+
+  /* Agenda week view */
+  .agenda {
+    --gutter: 54px;
+    position: relative; margin-top: 16px;
+    max-height: 64vh; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  }
+  .agendaHead {
+    position: sticky; top: 0; z-index: 6;
+    display: grid; grid-template-columns: var(--gutter) repeat(7, 1fr);
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .agendaHead .dh { text-align: center; padding: 11px 4px; border-left: 1px solid var(--border); }
+  .agendaHead .dh.today { background: rgba(233,196,106,0.08); }
+  .agendaHead .dh .dn { font-size: 13px; font-weight: 700; }
+  .agendaHead .dh.today .dn { color: var(--gold); }
+  .agendaHead .dh .dd { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .agendaBody { position: relative; }
+  .gutter { position: absolute; left: 0; top: 0; width: var(--gutter); height: 100%; }
+  .gutter .hl {
+    position: absolute; left: 0; width: 100%; text-align: right; padding-right: 7px;
+    font-size: 10px; color: var(--muted); transform: translateY(-6px); font-variant-numeric: tabular-nums;
+  }
+  .gridlines { position: absolute; left: var(--gutter); right: 0; top: 0; height: 100%; }
+  .gridlines .gl { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); opacity: 0.4; }
+  .daycols {
+    position: absolute; left: var(--gutter); right: 0; top: 0; height: 100%;
+    display: grid; grid-template-columns: repeat(7, 1fr);
+  }
+  .daycol { position: relative; border-left: 1px solid var(--border); }
+  .daycol.today { background: rgba(233,196,106,0.045); }
+  .ev {
+    position: absolute; left: 4px; right: 4px; z-index: 2;
+    border-left: 3px solid; background: var(--panel-2);
+    border-radius: 6px; padding: 3px 7px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  }
+  .ev.active { background: rgba(110,231,168,0.18); box-shadow: 0 0 0 1px var(--green); }
+  .ev.past { opacity: 0.4; }
+  .ev .et { font-size: 10px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ev .en { font-size: 11.5px; font-weight: 600; line-height: 1.15; }
+  .ev .live { color: var(--green); font-size: 8px; padding: 0 4px; border-radius: 8px; background: rgba(110,231,168,0.22); margin-left: 4px; vertical-align: 1px; }
+  .evbg { position: absolute; left: 2px; right: 2px; z-index: 1; border-radius: 6px; overflow: hidden; }
+  .evbg.past { opacity: 0.4; }
+  .evbg .lbl { position: absolute; top: 3px; left: 7px; right: 4px; font-size: 10px; font-weight: 600; color: var(--text); opacity: 0.85; }
+  .nowline { position: absolute; left: var(--gutter); right: 0; height: 0; border-top: 2px solid #ff5a5a; z-index: 5; pointer-events: none; }
+  .nowline::after { content: ""; position: absolute; left: -1px; top: -4px; width: 7px; height: 7px; border-radius: 50%; background: #ff5a5a; }
+  .nowflag {
+    position: absolute; left: 0; width: var(--gutter); text-align: right; padding-right: 7px;
+    font-size: 10px; font-weight: 700; color: #ff5a5a; z-index: 7;
+    transform: translateY(-7px); font-variant-numeric: tabular-nums;
+  }
+  /* daily-reset markers */
+  .resetline { position: absolute; left: var(--gutter); right: 0; height: 0; border-top: 2px dashed #5ad1ff; opacity: 0.85; z-index: 4; pointer-events: none; }
+  .resetline span { position: absolute; left: 5px; top: -8px; font-size: 9px; font-weight: 700; color: #062430; background: #5ad1ff; padding: 0 6px; border-radius: 8px; }
+  .swimreset { position: absolute; top: 0; bottom: 0; border-left: 2px dashed #5ad1ff; opacity: 0.85; z-index: 2; }
+  .swimreset span { position: absolute; top: -1px; left: 3px; font-size: 9px; font-weight: 700; color: #5ad1ff; }
+  .tblcap { padding: 9px 12px; color: #5ad1ff; font-size: 12px; font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+  .nrow.reset { background: rgba(90,209,255,0.06); }
+  .nrow.reset .nn { color: #9fe3ff; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 30px; }
+  footer code { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚔️ Idle Saga — Event Timeline</h1>
+    <div class="clocks">
+      <div class="clock">
+        <div class="label">Your time</div>
+        <div class="time" id="localTime">--:--:--</div>
+        <div class="sub">this computer's clock</div>
+      </div>
+      <div class="clock">
+        <div class="label">Server time</div>
+        <div class="time" id="serverTime">--:--:--</div>
+        <div class="sub" id="serverDay"></div>
+      </div>
+      <div class="clock reset">
+        <div class="label">Next daily reset</div>
+        <div class="time" id="resetCd">--</div>
+        <div class="sub" id="resetSub"></div>
+      </div>
+    </div>
+  </header>
+
+  <div id="hero"></div>
+  <div id="tabs" class="tabs"></div>
+  <div id="timeline"></div>
+
+  <footer>
+    Calibration: the game server runs <b id="offLabel"></b> ahead of this computer's clock.<br>
+    Tweak <code>SERVER_AHEAD_HOURS</code> in this file if the server clock ever drifts.
+  </footer>
+</div>
+
+<script>
+// ── Calibration ────────────────────────────────────────────────────────────
+// How many hours the game's server clock is AHEAD of THIS computer's clock.
+// Observed: the game showed 16:00 while this computer showed 02:00  ->  16 - 2 = 14h.
+// (We anchor to the system clock, not UTC, so it works regardless of OS timezone.)
+const SERVER_AHEAD_HOURS = 14;
+const SERVER_AHEAD_MS = SERVER_AHEAD_HOURS * 3600 * 1000;
+
+// Vertical pixels per hour in the agenda (taller = more spacious).
+const HOUR_PX = 46;
+
+// Daily reset = 00:00 server time, expressed as local minutes-from-midnight.
+const RESET_MIN = ((-(SERVER_AHEAD_MS/60000)) % 1440 + 1440) % 1440;
+function resetStr(){ return pad(Math.floor(RESET_MIN/60)) + ":" + pad(RESET_MIN % 60); }
+function nextReset(now){
+  const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let r = new Date(t0.getTime() + RESET_MIN*60000);
+  if (r <= now) r = new Date(r.getTime() + 86400000);
+  return r;
+}
+
+// ── Events (all times are in SERVER wall-clock) ─────────────────────────────
+const EVENTS = [
+  { name: "Poseidon's Treasure",   color: "#3aa0ff", slots: [["11:00","12:00"],["18:00","19:00"],["21:30","22:30"]], days: "daily" },
+  { name: "Server Treasure Hunt",  color: "#c084fc", slots: [["12:00","12:15"]], days: "daily" },
+  { name: "Red Fortress",          color: "#ff6b6b", slots: [["12:15","12:25"],["19:30","19:40"]], days: "daily" },
+  { name: "World Boss",            color: "#ffb020", slots: [["12:30","12:40"],["19:00","19:10"]], days: "daily" },
+  { name: "Ancient Battlefield",   color: "#ff8c42", slots: [["19:10","19:30"]], days: "daily" },
+  { name: "Monster Siege",         color: "#c98a5e", slots: [["10:00","22:00"]], days: "daily", window: true },
+  { name: "Avatar War",            color: "#6ee7a8", slots: [["20:00","20:30"]], days: "exceptSat" },
+  { name: "Territory War",         color: "#e9c46a", slots: [["20:00","20:30"]], days: "satOnly" },
+];
+
+const DOW = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+function pad(n){ return String(n).padStart(2,"0"); }
+
+// The server "wall clock" Date for a given instant = local clock shifted forward.
+// Reading its local getHours()/getDate()/getDay() gives the server's wall time/date.
+function serverView(instant){ return new Date(instant.getTime() + SERVER_AHEAD_MS); }
+
+function activeOnDow(ev, dow){
+  if (ev.days === "daily") return true;
+  if (ev.days === "satOnly") return dow === 6;
+  if (ev.days === "exceptSat") return dow !== 6;
+  return true;
+}
+
+// Build all occurrences in a window around now.
+function genOccurrences(now){
+  const sv = serverView(now);                       // server wall-clock "today"
+  const baseY = sv.getFullYear(), baseM = sv.getMonth(), baseD = sv.getDate();
+  const out = [];
+  for (let off = -2; off <= 9; off++){
+    const dt = new Date(baseY, baseM, baseD + off);  // a server calendar date
+    const y = dt.getFullYear(), m = dt.getMonth(), d = dt.getDate(), dow = dt.getDay();
+    for (const ev of EVENTS){
+      if (!activeOnDow(ev, dow)) continue;
+      for (const [s,e] of ev.slots){
+        const [sh,sm] = s.split(":").map(Number);
+        const [eh,em] = e.split(":").map(Number);
+        // Server wall time (y,m,d,h,m) -> real instant: build it as if local, then
+        // subtract the offset (server is ahead, so it happens that many hours earlier locally).
+        const start = new Date(new Date(y,m,d,sh,sm).getTime() - SERVER_AHEAD_MS);
+        let   end   = new Date(new Date(y,m,d,eh,em).getTime() - SERVER_AHEAD_MS);
+        if (end <= start) end = new Date(end.getTime() + 24*3600*1000);
+        out.push({ ev, start, end, srvStart: s, srvEnd: e });
+      }
+    }
+  }
+  out.sort((a,b)=>a.start-b.start);
+  return out;
+}
+
+function fmtLocal(date){ return pad(date.getHours())+":"+pad(date.getMinutes()); }
+
+function fmtDur(ms){
+  if (ms < 0) ms = 0;
+  const t = Math.floor(ms/1000);
+  const h = Math.floor(t/3600), mi = Math.floor((t%3600)/60), s = t%60;
+  if (h > 0) return h+"h "+pad(mi)+"m";
+  if (mi > 0) return mi+"m "+pad(s)+"s";
+  return s+"s";
+}
+
+function render(){
+  const now = new Date();
+
+  // Clocks
+  document.getElementById("localTime").textContent =
+    pad(now.getHours())+":"+pad(now.getMinutes())+":"+pad(now.getSeconds());
+  const sv = serverView(now);
+  document.getElementById("serverTime").textContent =
+    pad(sv.getHours())+":"+pad(sv.getMinutes())+":"+pad(sv.getSeconds());
+  document.getElementById("serverDay").textContent = DOW[sv.getDay()];
+  document.getElementById("offLabel").textContent = SERVER_AHEAD_HOURS + "h";
+  document.getElementById("resetCd").textContent = fmtDur(nextReset(now) - now);
+  document.getElementById("resetSub").textContent = "at " + resetStr() + " · 00:00 server";
+
+  const occ = genOccurrences(now).filter(o => o.end > now);
+
+  // Hero: currently active (soonest-ending) else next upcoming
+  const active = occ.filter(o => o.start <= now && o.end > now);
+  const upcoming = occ.filter(o => o.start > now);
+  const hero = active.length ? active.sort((a,b)=>a.end-b.end)[0] : upcoming[0];
+
+  const heroEl = document.getElementById("hero");
+  if (hero){
+    const isActive = hero.start <= now;
+    heroEl.innerHTML =
+      '<div class="next-hero'+(isActive?" active":"")+'">'+
+        '<div class="dot" style="background:'+hero.ev.color+'"></div>'+
+        '<div class="info">'+
+          '<div class="kicker">'+(isActive?"Happening now":"Next up")+'</div>'+
+          '<div class="name">'+hero.ev.name+'</div>'+
+          '<div class="when">'+fmtLocal(hero.start)+'–'+fmtLocal(hero.end)+
+            '  ·  server '+hero.srvStart+'–'+hero.srvEnd+'</div>'+
+        '</div>'+
+        '<div class="cd"><span class="cdlabel">'+(isActive?"ends in":"starts in")+'</span>'+
+          fmtDur(isActive ? hero.end-now : hero.start-now)+'</div>'+
+      '</div>';
+  } else heroEl.innerHTML = "";
+
+  // ── Tabs + active-view dispatch ────────────────────────────────────────────
+  document.getElementById("tabs").innerHTML = VIEWS.map(v =>
+    '<button class="tab'+(v[0]===activeView?" on":"")+'" onclick="setView(\''+v[0]+'\')">'+v[1]+'</button>'
+  ).join("");
+
+  const tl = document.getElementById("timeline");
+  const oldScroller = tl.querySelector("#viewscroll");
+  if (oldScroller && renderedKey != null)
+    scrollMem[renderedKey] = { top: oldScroller.scrollTop, left: oldScroller.scrollLeft };
+
+  const view = activeView === "timeline" ? buildTimeline(now)
+            : activeView === "table"    ? buildTable(now)
+            : activeView === "next"     ? buildNext(now)
+            :                             buildAgenda(now);
+  tl.innerHTML = view.html;
+
+  const key = viewKey();
+  const sc = tl.querySelector("#viewscroll");
+  if (sc){
+    const mem = scrollMem[key];
+    if (mem){ sc.scrollTop = mem.top; sc.scrollLeft = mem.left; }
+    else if (view.center != null) sc.scrollTop = Math.max(0, view.center - sc.clientHeight/2);
+  }
+  renderedKey = key;
+}
+
+// ── View state ───────────────────────────────────────────────────────────────
+const VIEWS = [
+  ["table",    "🗂️ Table"],
+  ["timeline", "📊 Timeline"],
+  ["agenda",   "📅 Agenda"],
+  ["next",     "⏭️ Up Next"],
+];
+let activeView = localStorage.getItem("idleSagaView") || "table";
+let selectedDay = 0;          // which day the Timeline view shows (0 = today)
+let renderedKey = null;
+const scrollMem = {};
+const viewKey = () => activeView === "timeline" ? "timeline:"+selectedDay : activeView;
+
+function setView(v){ activeView = v; localStorage.setItem("idleSagaView", v); render(); }
+function shiftDay(d){ selectedDay = (selectedDay + d + 7) % 7; render(); }
+window.setView = setView; window.shiftDay = shiftDay;
+
+function dayName(i, date){ return i === 0 ? "Today" : i === 1 ? "Tomorrow" : DOW[date.getDay()]; }
+const minOfDay = (d, day0) => (d - day0)/60000;   // minutes since that local midnight
+
+// Bucket all occurrences into 7 local-day columns, splitting any that cross midnight.
+function buildColumns(now){
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const cols = [];
+  for (let i = 0; i < 7; i++)
+    cols.push({ date: new Date(today0.getFullYear(), today0.getMonth(), today0.getDate()+i), segs: [] });
+  for (const o of genOccurrences(now)){
+    let cur = new Date(o.start.getFullYear(), o.start.getMonth(), o.start.getDate());
+    for (let guard = 0; cur <= o.end && guard < 10; guard++){
+      const dayStart = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate());
+      const dayEnd   = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate()+1);
+      const segStart = o.start > dayStart ? o.start : dayStart;
+      const segEnd   = o.end   < dayEnd   ? o.end   : dayEnd;
+      const idx = Math.round((dayStart - today0)/86400000);
+      if (segEnd > segStart && idx >= 0 && idx < 7)
+        cols[idx].segs.push({ o, segStart, segEnd, dayStart, isStart: segStart.getTime() === o.start.getTime() });
+      cur = dayEnd;
+    }
+  }
+  return { today0, cols };
+}
+
+// ── View: Matrix table (rows = events, columns = days) ───────────────────────
+function buildTable(now){
+  const { today0, cols } = buildColumns(now);
+  let nextStart = Infinity;
+  for (const c of cols) for (const s of c.segs)
+    if (s.isStart && s.o.start > now) nextStart = Math.min(nextStart, s.o.start.getTime());
+
+  let head = '<thead><tr><th>Event</th>';
+  for (let i = 0; i < 7; i++)
+    head += '<th class="'+(i===0?"today":"")+'">'+dayName(i, cols[i].date)+
+      '<br><small>'+cols[i].date.toLocaleDateString(undefined,{month:"short",day:"numeric"})+'</small></th>';
+  head += '</tr></thead>';
+
+  let body = '<tbody>';
+  for (const ev of EVENTS){
+    body += '<tr><td class="evname"><span class="sw" style="background:'+ev.color+'"></span>'+ev.name+'</td>';
+    for (let i = 0; i < 7; i++){
+      const slots = cols[i].segs.filter(s => s.o.ev === ev && s.isStart).sort((a,b)=>a.o.start-b.o.start);
+      if (!slots.length){ body += '<td class="none'+(i===0?" today":"")+'">—</td>'; continue; }
+      let cell = '';
+      for (const s of slots){
+        const o = s.o, isActive = o.start<=now && o.end>now, isPast = o.end<=now;
+        const cls = isActive ? "live" : o.start.getTime()===nextStart ? "next" : isPast ? "past" : "";
+        cell += '<span class="t '+cls+'">'+fmtLocal(o.start)+'–'+fmtLocal(o.end)+(isActive?" ●":"")+'</span>';
+      }
+      body += '<td class="'+(i===0?"today":"")+'">'+cell+'</td>';
+    }
+    body += '</tr>';
+  }
+  body += '</tbody>';
+  const cap = '<div class="tblcap">⟳ Daily reset at '+resetStr()+' your time (00:00 server)</div>';
+  return { html: '<div class="tblwrap" id="viewscroll">'+cap+'<table class="tbl">'+head+body+'</table></div>', center: null };
+}
+
+// ── View: Swimlane timeline (one lane per event — overlap is impossible) ──────
+function buildTimeline(now){
+  const { today0, cols } = buildColumns(now);
+  const col = cols[selectedDay], dayStart = col.date;
+  const pct = mins => (mins/1440)*100;
+
+  let ticks = '';
+  for (let h = 0; h <= 24; h += 3) ticks += '<span style="left:'+pct(h*60)+'%">'+pad(h)+':00</span>';
+
+  let rows = '';
+  for (const ev of EVENTS){
+    let blocks = '';
+    for (const s of col.segs){
+      if (s.o.ev !== ev) continue;
+      const o = s.o;
+      const left = pct(minOfDay(s.segStart, dayStart));
+      const width = pct(minOfDay(s.segEnd, dayStart) - minOfDay(s.segStart, dayStart));
+      const isActive = o.start<=now && o.end>now, isPast = o.end<=now;
+      const bg = ev.window ? ev.color+"55;border:1px solid "+ev.color+"aa" : ev.color;
+      blocks += '<div class="swimblk'+(isActive?" active":"")+(isPast?" past":"")+'" style="left:'+left+
+        '%;width:'+width+'%;background:'+bg+'" title="server '+o.srvStart+'–'+o.srvEnd+'">'+
+        (s.isStart && !ev.window ? '<span>'+fmtLocal(o.start)+'</span>' : '')+'</div>';
+    }
+    rows += '<div class="swimrow"><div class="swimname"><span class="sw" style="background:'+ev.color+'"></span>'+
+      ev.name+'</div><div class="swimtrack">'+blocks+'</div></div>';
+  }
+
+  let overlay = '<div class="swimvlines">';
+  for (let h = 3; h < 24; h += 3) overlay += '<i style="left:'+pct(h*60)+'%"></i>';
+  overlay += '<div class="swimreset" style="left:'+pct(RESET_MIN)+'%"><span>⟳ reset</span></div>';
+  if (selectedDay === 0) overlay += '<div class="swimnow" style="left:'+(minOfDay(now,today0)/1440*100)+'%"></div>';
+  overlay += '</div>';
+
+  const lbl = '<div class="lbl">'+dayName(selectedDay, dayStart)+
+    '<small>'+dayStart.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"})+'</small></div>';
+
+  return {
+    html: '<div class="swim" id="viewscroll"><div class="swimhead">'+
+      '<button onclick="shiftDay(-1)">‹</button>'+lbl+'<button onclick="shiftDay(1)">›</button></div>'+
+      '<div class="swimaxis"><div></div><div class="ticks">'+ticks+'</div></div>'+
+      '<div class="swimgrid">'+rows+overlay+'</div></div>',
+    center: null
+  };
+}
+
+// ── View: Up Next (chronological list with countdowns) ───────────────────────
+function buildNext(now){
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const items = genOccurrences(now).filter(o => o.end > now).map(o => ({ start: o.start, o }));
+  // interleave the next few daily resets
+  const r0 = nextReset(now);
+  for (let i = 0; i < 7; i++) items.push({ start: new Date(r0.getTime() + i*86400000), reset: true });
+  items.sort((a,b)=>a.start-b.start);
+
+  const dlabel = d => { const di = Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate()) - today0)/86400000);
+    return di===0 ? "Today" : di===1 ? "Tomorrow" : DOW[d.getDay()]; };
+
+  let html = '<div class="nextlist" id="viewscroll">';
+  for (const it of items.slice(0, 28)){
+    if (it.reset){
+      html += '<div class="nrow reset" style="border-left-color:#5ad1ff">'+
+        '<div class="nt"><div class="l">'+fmtLocal(it.start)+'</div><div class="d">'+dlabel(it.start)+'</div></div>'+
+        '<div class="nn">⟳ Daily reset<div class="ns">00:00 server time</div></div>'+
+        '<div class="nc">'+fmtDur(it.start-now)+'</div></div>';
+      continue;
+    }
+    const o = it.o, isActive = o.start<=now && o.end>now;
+    const cd = isActive ? "ends "+fmtDur(o.end-now) : fmtDur(o.start-now);
+    html += '<div class="nrow'+(isActive?" active":"")+'" style="border-left-color:'+o.ev.color+'">'+
+      '<div class="nt"><div class="l">'+fmtLocal(o.start)+'</div><div class="d">'+dlabel(o.start)+'</div></div>'+
+      '<div class="nn">'+o.ev.name+(isActive?' <span style="color:var(--green);font-size:11px">● LIVE</span>':'')+
+        '<div class="ns">'+fmtLocal(o.start)+'–'+fmtLocal(o.end)+' · server '+o.srvStart+'–'+o.srvEnd+'</div></div>'+
+      '<div class="nc">'+cd+'</div></div>';
+  }
+  html += '</div>';
+  return { html, center: null };
+}
+
+// ── View: Agenda (time grid, overlapping events packed side by side) ─────────
+function buildAgenda(now){
+  const { today0, cols } = buildColumns(now);
+  const yFor = (d, day0) => (minOfDay(d, day0)/60) * HOUR_PX;
+
+  let head = '<div class="agendaHead"><div></div>';
+  for (let i = 0; i < 7; i++)
+    head += '<div class="dh'+(i===0?" today":"")+'"><div class="dn">'+dayName(i, cols[i].date)+
+      '</div><div class="dd">'+cols[i].date.toLocaleDateString(undefined,{month:"short",day:"numeric"})+'</div></div>';
+  head += '</div>';
+
+  let gutter = '<div class="gutter">', lines = '<div class="gridlines">';
+  for (let h = 0; h <= 24; h++){
+    const y = h*HOUR_PX;
+    if (h < 24) gutter += '<div class="hl" style="top:'+y+'px">'+pad(h)+':00</div>';
+    lines += '<div class="gl" style="top:'+y+'px"></div>';
+  }
+  gutter += '</div>'; lines += '</div>';
+
+  let body = '<div class="daycols">';
+  for (let i = 0; i < 7; i++){
+    body += '<div class="daycol'+(i===0?" today":"")+'">';
+    // availability windows as background bands
+    for (const s of cols[i].segs){
+      if (!s.o.ev.window) continue;
+      const o = s.o, top = yFor(s.segStart, s.dayStart), h = yFor(s.segEnd, s.dayStart) - top;
+      body += '<div class="evbg'+(o.end<=now?" past":"")+'" style="top:'+top+'px;height:'+h+
+        'px;background:'+o.ev.color+'1f;border:1px solid '+o.ev.color+'66" title="server '+o.srvStart+'–'+o.srvEnd+'">'+
+        '<span class="lbl">'+o.ev.name+'</span></div>';
+    }
+    // point events, packed into lanes so collisions sit side by side
+    const pts = cols[i].segs.filter(s=>!s.o.ev.window).map(s=>{
+      const top = yFor(s.segStart, s.dayStart);
+      const h = Math.max(yFor(s.segEnd, s.dayStart) - top, 22);
+      return { s, top, bot: top+h, h, lane: 0, lanes: 1 };
+    }).sort((a,b)=>a.top-b.top || a.bot-b.bot);
+    let k = 0;
+    while (k < pts.length){
+      let maxBot = pts[k].bot, j = k+1;
+      while (j < pts.length && pts[j].top < maxBot){ maxBot = Math.max(maxBot, pts[j].bot); j++; }
+      const cluster = pts.slice(k, j), laneBot = [];
+      for (const it of cluster){
+        let placed = false;
+        for (let l = 0; l < laneBot.length; l++){ if (laneBot[l] <= it.top){ it.lane=l; laneBot[l]=it.bot; placed=true; break; } }
+        if (!placed){ it.lane = laneBot.length; laneBot.push(it.bot); }
+      }
+      for (const it of cluster) it.lanes = laneBot.length;
+      k = j;
+    }
+    for (const it of pts){
+      const o = it.s.o, isActive = o.start<=now && o.end>now, isPast = o.end<=now;
+      const w = 100/it.lanes, left = it.lane*w;
+      body += '<div class="ev'+(isActive?" active":"")+(isPast?" past":"")+'" style="top:'+it.top+
+        'px;height:'+it.h+'px;left:calc('+left+'% + 3px);width:calc('+w+'% - 6px);border-left-color:'+o.ev.color+
+        '" title="server '+o.srvStart+'–'+o.srvEnd+'">'+
+        '<div class="et">'+fmtLocal(o.start)+'–'+fmtLocal(o.end)+(isActive?'<span class="live">LIVE</span>':'')+'</div>'+
+        '<div class="en">'+o.ev.name+'</div></div>';
+    }
+    body += '</div>';
+  }
+  body += '</div>';
+
+  const nowY = yFor(now, today0);
+  const nowEl = '<div class="nowflag" style="top:'+nowY+'px">'+pad(now.getHours())+':'+pad(now.getMinutes())+'</div>'+
+                '<div class="nowline" style="top:'+nowY+'px"></div>';
+  const resetY = (RESET_MIN/60)*HOUR_PX;
+  const resetEl = '<div class="resetline" style="top:'+resetY+'px"><span>⟳ reset</span></div>';
+
+  return {
+    html: '<div class="agenda" id="viewscroll">'+head+
+      '<div class="agendaBody" style="height:'+(24*HOUR_PX)+'px">'+gutter+lines+body+resetEl+nowEl+'</div></div>',
+    center: nowY
+  };
+}
+
+render();
+setInterval(render, 1000);
+</script>
+</body>
+</html>
