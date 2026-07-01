@@ -1,3 +1,7 @@
+> [!NOTE]
+> 🏡 This project's primary home is now on **[Codeberg](https://codeberg.org/SainteCroquette/idle-saga-helper)**.
+> Development continues there; this GitHub repository is a mirror and may lag behind.
+
 # Idle Saga — Event Timeline
 
 A tiny, single-file web app to track recurring **daily** and **weekly** events in *Idle Saga* (GameHollywood). Server times (UTC+8) are converted to your local clock, with a live "now" line, a daily-reset marker, and four switchable views.
